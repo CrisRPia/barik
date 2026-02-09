@@ -5,17 +5,57 @@ class AerospaceSpacesProvider: SpacesProvider, SwitchableSpacesProvider {
     let executablePath = ConfigManager.shared.config.aerospace.path
 
     func getSpacesWithWindows() -> [AeroSpace]? {
-        guard var spaces = fetchSpaces(), let windows = fetchWindows() else {
+        // Create storage for results
+        var spaces: [AeroSpace]?
+        var windows: [AeroWindow]?
+        var focusedSpace: AeroSpace?
+        var focusedWindow: AeroWindow?
+
+        let group = DispatchGroup()
+
+        // 1. Fetch Spaces
+        group.enter()
+        DispatchQueue.global(qos: .userInitiated).async {
+            spaces = self.fetchSpaces()
+            group.leave()
+        }
+
+        // 2. Fetch Windows
+        group.enter()
+        DispatchQueue.global(qos: .userInitiated).async {
+            windows = self.fetchWindows()
+            group.leave()
+        }
+
+        // 3. Fetch Focused Space (Optional, if you want full correctness)
+        group.enter()
+        DispatchQueue.global(qos: .userInitiated).async {
+            focusedSpace = self.fetchFocusedSpace()
+            group.leave()
+        }
+
+        // 4. Fetch Focused Window (Optional)
+        group.enter()
+        DispatchQueue.global(qos: .userInitiated).async {
+            focusedWindow = self.fetchFocusedWindow()
+            group.leave()
+        }
+
+        // Wait for all commands to finish
+        group.wait()
+
+        // Safely unwrap results
+        guard var spaces = spaces, let windows = windows else {
             return nil
         }
-        if let focusedSpace = fetchFocusedSpace() {
+        if let focusedSpace = focusedSpace {
             for i in 0..<spaces.count {
                 spaces[i].isFocused = (spaces[i].id == focusedSpace.id)
             }
         }
-        let focusedWindow = fetchFocusedWindow()
         var spaceDict = Dictionary(
-            uniqueKeysWithValues: spaces.map { ($0.id, $0) })
+            uniqueKeysWithValues: spaces.map { ($0.id, $0) }
+        )
         for window in windows {
             var mutableWindow = window
             if let focused = focusedWindow, window.id == focused.id {
@@ -37,7 +77,7 @@ class AerospaceSpacesProvider: SpacesProvider, SwitchableSpacesProvider {
         for i in 0..<resultSpaces.count {
             resultSpaces[i].windows.sort { $0.id < $1.id }
         }
-        return resultSpaces.filter { !$0.windows.isEmpty }
+        return resultSpaces.filter { !$0.windows.isEmpty || $0.isFocused }
     }
 
     func focusSpace(spaceId: String, needWindowFocus: Bool) {

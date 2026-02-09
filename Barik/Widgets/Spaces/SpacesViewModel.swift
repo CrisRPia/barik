@@ -6,6 +6,26 @@ class SpacesViewModel: ObservableObject {
     @Published var spaces: [AnySpace] = []
     private var timer: Timer?
     private var provider: AnySpacesProvider?
+    private let pipePath = (NSTemporaryDirectory() as NSString).appendingPathComponent("barik.fifo")
+    
+    private func setupNamedPipe() {
+        // Create the FIFO if it doesn't exist
+        unlink(pipePath) // Ensure clean state
+        mkfifo(pipePath, 0o666)
+
+        // Run in a background thread so we don't block the UI
+        DispatchQueue.global(qos: .userInteractive).async {
+            while true {
+                // open() blocks until someone writes to the pipe
+                let fileDescriptor = open(self.pipePath, O_RDONLY)
+                if fileDescriptor != -1 {
+                    // Someone wrote to the pipe!
+                    self.loadSpaces()
+                    close(fileDescriptor)
+                }
+            }
+        }
+    }
 
     init() {
         let runningApps = NSWorkspace.shared.runningApplications.compactMap {
@@ -18,6 +38,7 @@ class SpacesViewModel: ObservableObject {
         } else {
             provider = nil
         }
+        setupNamedPipe()
         startMonitoring()
     }
 
@@ -26,7 +47,7 @@ class SpacesViewModel: ObservableObject {
     }
 
     private func startMonitoring() {
-        timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) {
+        timer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) {
             [weak self] _ in
             self?.loadSpaces()
         }
@@ -39,7 +60,7 @@ class SpacesViewModel: ObservableObject {
     }
 
     private func loadSpaces() {
-        DispatchQueue.global(qos: .background).async {
+        DispatchQueue.global(qos: .userInteractive).async {
             guard let provider = self.provider,
                 let spaces = provider.getSpacesWithWindows()
             else {
@@ -50,7 +71,9 @@ class SpacesViewModel: ObservableObject {
             }
             let sortedSpaces = spaces.sorted { $0.id < $1.id }
             DispatchQueue.main.async {
-                self.spaces = sortedSpaces
+                if self.spaces != sortedSpaces {
+                    self.spaces = sortedSpaces
+                }
             }
         }
     }

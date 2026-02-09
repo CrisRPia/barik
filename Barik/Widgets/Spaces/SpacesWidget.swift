@@ -12,7 +12,8 @@ struct SpacesWidget: View {
                 SpaceView(space: space)
             }
         }
-        .experimentalConfiguration(horizontalPadding: 5, cornerRadius: 10)
+        // The container uses a corner radius of 10
+        .experimentalConfiguration(horizontalPadding: 5, cornerRadius: 100)
         .animation(.smooth(duration: 0.3), value: viewModel.spaces)
         .foregroundStyle(Color.foreground)
         .environmentObject(viewModel)
@@ -64,7 +65,8 @@ private struct SpaceView: View {
                  ? Color.active
                  : isHovered ? Color.noActive : Color.noActive)
         )
-        .clipShape(RoundedRectangle(cornerRadius: foregroundHeight < 30 ? 0 : 8, style: .continuous))
+        // This ensures the first and last spaces align perfectly with the widget's edges.
+        .clipShape(RoundedRectangle(cornerRadius: foregroundHeight < 30 ? 0 : 100, style: .continuous))
         .shadow(color: .shadow, radius: foregroundHeight < 30 ? 0 : 2)
         .transition(.blurReplace)
         .onTapGesture {
