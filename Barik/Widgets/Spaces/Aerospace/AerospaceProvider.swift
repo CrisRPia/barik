@@ -48,6 +48,7 @@ class AerospaceSpacesProvider: SpacesProvider, SwitchableSpacesProvider {
         guard var spaces = spaces, let windows = windows else {
             return nil
         }
+        
         if let focusedSpace = focusedSpace {
             for i in 0..<spaces.count {
                 spaces[i].isFocused = (spaces[i].id == focusedSpace.id)
@@ -74,9 +75,6 @@ class AerospaceSpacesProvider: SpacesProvider, SwitchableSpacesProvider {
             }
         }
         var resultSpaces = Array(spaceDict.values)
-        for i in 0..<resultSpaces.count {
-            resultSpaces[i].windows.sort { $0.id < $1.id }
-        }
         return resultSpaces.filter { !$0.windows.isEmpty || $0.isFocused }
     }
 
