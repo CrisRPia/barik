@@ -2,20 +2,29 @@ import SwiftUI
 
 struct SpacesWidget: View {
     @StateObject var viewModel = SpacesViewModel()
+    @Namespace private var windowNamespace
 
     @ObservedObject var configManager = ConfigManager.shared
-    var foregroundHeight: CGFloat { configManager.config.experimental.foreground.resolveHeight() }
+    var foregroundHeight: CGFloat {
+        configManager.config.experimental.foreground.resolveHeight()
+    }
 
     var body: some View {
         HStack(spacing: foregroundHeight < 30 ? 0 : 8) {
             ForEach(viewModel.spaces) { space in
-                SpaceView(space: space)
+                SpaceView(space: space, windowNamespace: windowNamespace)
             }
         }
-        .experimentalConfiguration(horizontalPadding: 5, cornerRadius: 10)
+        // .experimentalConfiguration(horizontalPadding: 5, cornerRadius: 100)
         .animation(.smooth(duration: 0.3), value: viewModel.spaces)
-        .foregroundStyle(Color.foreground)
         .environmentObject(viewModel)
+        .background(.ultraThinMaterial)  // The "Frosted Glass"
+        .clipShape(RoundedRectangle(cornerRadius: 100, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 100, style: .continuous)
+                .stroke(.white.opacity(0.15), lineWidth: 1)  // The "Glass Edge"
+        )
+        .shadow(color: .black.opacity(0.15), radius: 10, x: 0, y: 5)
     }
 }
 
@@ -28,16 +37,21 @@ private struct SpaceView: View {
     var spaceConfig: ConfigData { config["space"]?.dictionaryValue ?? [:] }
 
     @ObservedObject var configManager = ConfigManager.shared
-    var foregroundHeight: CGFloat { configManager.config.experimental.foreground.resolveHeight() }
+    var foregroundHeight: CGFloat {
+        configManager.config.experimental.foreground.resolveHeight()
+    }
 
     var showKey: Bool { spaceConfig["show-key"]?.boolValue ?? true }
 
     let space: AnySpace
 
     @State var isHovered = false
+    var windowNamespace: Namespace.ID
 
     var body: some View {
-        let isFocused = space.windows.contains { $0.isFocused } || space.isFocused
+        let isFocused =
+            space.windows.contains { $0.isFocused } || space.isFocused
+        let hasWindows = !space.windows.isEmpty
         HStack(spacing: 0) {
             Spacer().frame(width: 10)
             if showKey {
@@ -45,26 +59,56 @@ private struct SpaceView: View {
                     .font(.headline)
                     .frame(minWidth: 15)
                     .fixedSize(horizontal: true, vertical: false)
-                Spacer().frame(width: 5)
+                if hasWindows {
+                    Spacer().frame(width: 5)
+                }
             }
             HStack(spacing: 2) {
                 ForEach(space.windows) { window in
-                    WindowView(window: window, space: space)
+                    WindowView(
+                        window: window,
+                        space: space,
+                        windowNamespace: windowNamespace
+                    )
                 }
             }
             Spacer().frame(width: 10)
         }
         .frame(height: 30)
         .background(
-            foregroundHeight < 30 ?
-            (isFocused
-             ? Color.noActive
-             : Color.clear) :
-                (isFocused
-                 ? Color.active
-                 : isHovered ? Color.noActive : Color.noActive)
+            ZStack {
+                if isFocused {
+                    RoundedRectangle(cornerRadius: 100, style: .continuous)
+                        .fill(.white)
+                        .opacity(0.2)
+                        .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
+                } else if isHovered {
+                    RoundedRectangle(cornerRadius: 100, style: .continuous)
+                        .fill(.white)
+                        .opacity(0.1)
+                }
+            }
         )
-        .clipShape(RoundedRectangle(cornerRadius: foregroundHeight < 30 ? 0 : 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 100, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: [
+                            .white.opacity(isFocused ? 0.3 : 0),
+                            .white.opacity(isFocused ? 0.1 : 0),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        )  // This ensures the first and last spaces align perfectly with the widget's edges.
+        .clipShape(
+            RoundedRectangle(
+                cornerRadius: foregroundHeight < 30 ? 0 : 100,
+                style: .continuous
+            )
+        )
         .shadow(color: .shadow, radius: foregroundHeight < 30 ? 0 : 2)
         .transition(.blurReplace)
         .onTapGesture {
@@ -90,10 +134,15 @@ private struct WindowView: View {
 
     var showTitle: Bool { windowConfig["show-title"]?.boolValue ?? true }
     var maxLength: Int { titleConfig["max-length"]?.intValue ?? 50 }
-    var alwaysDisplayAppTitleFor: [String] { titleConfig["always-display-app-name-for"]?.arrayValue?.filter({ $0.stringValue != nil }).map { $0.stringValue! } ?? [] }
+    var alwaysDisplayAppTitleFor: [String] {
+        titleConfig["always-display-app-name-for"]?.arrayValue?.filter({
+            $0.stringValue != nil
+        }).map { $0.stringValue! } ?? []
+    }
 
     let window: AnyWindow
     let space: AnySpace
+    var windowNamespace: Namespace.ID
 
     @State var isHovered = false
 
@@ -102,17 +151,26 @@ private struct WindowView: View {
         let size: CGFloat = 21
         let sameAppCount = space.windows.filter { $0.appName == window.appName }
             .count
-        let title = sameAppCount > 1 && !alwaysDisplayAppTitleFor.contains { $0 == window.appName } ? window.title : (window.appName ?? "")
+        let title =
+            sameAppCount > 1
+                && !alwaysDisplayAppTitleFor.contains { $0 == window.appName }
+            ? window.title : (window.appName ?? "")
         let spaceIsFocused = space.windows.contains { $0.isFocused }
         HStack {
             ZStack {
                 if let icon = window.appIcon {
                     Image(nsImage: icon)
                         .resizable()
+                        .matchedGeometryEffect(
+                            id: window.id,
+                            in: windowNamespace
+                        )
                         .frame(width: size, height: size)
                         .shadow(
-                            color: .iconShadow,
-                            radius: 2
+                            color: .black.opacity(0.2),
+                            radius: 3,
+                            x: 0,
+                            y: 1
                         )
                 } else {
                     Image(systemName: "questionmark.circle")
@@ -139,7 +197,9 @@ private struct WindowView: View {
             }
         }
         .padding(.all, 2)
-        .background(isHovered || (!showTitle && window.isFocused) ? .selected : .clear)
+        .background(
+            isHovered || (!showTitle && window.isFocused) ? .selected : .clear
+        )
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .animation(.smooth, value: isHovered)
         .frame(height: 30)

@@ -28,6 +28,7 @@ struct MenuBarView: View {
                 SystemBannerWidget(withLeftPadding: true)
             }
         }
+        .animation(.smooth)
         .foregroundStyle(Color.foregroundOutside)
         .frame(height: max(configManager.config.experimental.foreground.resolveHeight(), 1.0))
         .frame(maxWidth: .infinity)

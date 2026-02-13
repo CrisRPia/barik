@@ -6,6 +6,38 @@ class SpacesViewModel: ObservableObject {
     @Published var spaces: [AnySpace] = []
     private var timer: Timer?
     private var provider: AnySpacesProvider?
+    private let pipePath = (NSTemporaryDirectory() as NSString)
+        .appendingPathComponent("barik.fifo")
+
+    private func setupNamedPipe() {
+        unlink(pipePath)
+        mkfifo(pipePath, 0o666)
+
+        DispatchQueue.global(qos: .userInteractive).async {
+            let fileDescriptor = open(self.pipePath, O_RDWR)
+
+            guard fileDescriptor != -1 else {
+                print("Failed to open FIFO")
+                return
+            }
+
+            var buffer = [UInt8](repeating: 0, count: 1024)
+
+            while true {
+                let bytesRead = read(fileDescriptor, &buffer, 1024)
+
+                if bytesRead > 0 {
+                    self.loadSpaces()
+                } else if bytesRead == -1 {
+                    print("Error reading FIFO")
+                    close(fileDescriptor)
+                    usleep(1_000_000)
+                    self.setupNamedPipe()
+                    return
+                }
+            }
+        }
+    }
 
     init() {
         let runningApps = NSWorkspace.shared.runningApplications.compactMap {
@@ -18,6 +50,7 @@ class SpacesViewModel: ObservableObject {
         } else {
             provider = nil
         }
+        setupNamedPipe()
         startMonitoring()
     }
 
@@ -26,7 +59,7 @@ class SpacesViewModel: ObservableObject {
     }
 
     private func startMonitoring() {
-        timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) {
+        timer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) {
             [weak self] _ in
             self?.loadSpaces()
         }
@@ -39,7 +72,7 @@ class SpacesViewModel: ObservableObject {
     }
 
     private func loadSpaces() {
-        DispatchQueue.global(qos: .background).async {
+        DispatchQueue.global(qos: .userInteractive).async {
             guard let provider = self.provider,
                 let spaces = provider.getSpacesWithWindows()
             else {
@@ -50,7 +83,9 @@ class SpacesViewModel: ObservableObject {
             }
             let sortedSpaces = spaces.sorted { $0.id < $1.id }
             DispatchQueue.main.async {
-                self.spaces = sortedSpaces
+                if self.spaces != sortedSpaces {
+                    self.spaces = sortedSpaces
+                }
             }
         }
     }
@@ -58,7 +93,9 @@ class SpacesViewModel: ObservableObject {
     func switchToSpace(_ space: AnySpace, needWindowFocus: Bool = false) {
         DispatchQueue.global(qos: .userInitiated).async {
             self.provider?.focusSpace(
-                spaceId: space.id, needWindowFocus: needWindowFocus)
+                spaceId: space.id,
+                needWindowFocus: needWindowFocus
+            )
         }
     }
 

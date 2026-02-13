@@ -68,7 +68,7 @@ struct TimeWidget: View {
     // Format the current time.
     private func formattedTime(pattern: String, from time: Date) -> String {
         let formatter = DateFormatter()
-        formatter.setLocalizedDateFormatFromTemplate(pattern)
+        formatter.dateFormat = pattern
 
         if let timeZone = timeZone,
             let tz = TimeZone(identifier: timeZone)

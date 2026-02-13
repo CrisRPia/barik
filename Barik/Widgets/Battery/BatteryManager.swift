@@ -2,12 +2,12 @@ import Combine
 import Foundation
 import IOKit.ps
 
-/// This class monitors the battery status.
 class BatteryManager: ObservableObject {
     @Published var batteryLevel: Int = 0
     @Published var isCharging: Bool = false
     @Published var isPluggedIn: Bool = false
-    private var timer: Timer?
+
+    private var runLoopSource: CFRunLoopSource?
 
     init() {
         startMonitoring()
@@ -18,27 +18,34 @@ class BatteryManager: ObservableObject {
     }
 
     private func startMonitoring() {
-        // Update every 1 second.
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) {
-            [weak self] _ in
-            self?.updateBatteryStatus()
-        }
         updateBatteryStatus()
+
+        let context = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
+
+        let callback: IOPowerSourceCallbackType = { context in
+            guard let context = context else { return }
+            let manager = Unmanaged<BatteryManager>.fromOpaque(context).takeUnretainedValue()
+            manager.updateBatteryStatus()
+        }
+
+        guard
+            let source = IOPSNotificationCreateRunLoopSource(callback, context)?.takeRetainedValue()
+        else { return }
+        runLoopSource = source
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
     }
 
     private func stopMonitoring() {
-        timer?.invalidate()
-        timer = nil
+        if let source = runLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+            runLoopSource = nil
+        }
     }
 
-    /// This method updates the battery level and charging state.
     func updateBatteryStatus() {
         guard let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
-            let sources = IOPSCopyPowerSourcesList(snapshot)?
-                .takeRetainedValue() as? [CFTypeRef]
-        else {
-            return
-        }
+            let sources = IOPSCopyPowerSourcesList(snapshot)?.takeRetainedValue() as? [CFTypeRef]
+        else { return }
 
         for source in sources {
             if let description = IOPSGetPowerSourceDescription(
