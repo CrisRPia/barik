@@ -10,7 +10,6 @@ class SpacesViewModel: ObservableObject {
         .appendingPathComponent("barik.fifo")
 
     private func setupNamedPipe() {
-        // Clean up any old pipe
         unlink(pipePath)
         mkfifo(pipePath, 0o666)
 

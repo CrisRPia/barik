@@ -5,7 +5,6 @@ class AerospaceSpacesProvider: SpacesProvider, SwitchableSpacesProvider {
     let executablePath = ConfigManager.shared.config.aerospace.path
 
     func getSpacesWithWindows() -> [AeroSpace]? {
-        // Create storage for results
         var spaces: [AeroSpace]?
         var windows: [AeroWindow]?
         var focusedSpace: AeroSpace?
@@ -13,38 +12,32 @@ class AerospaceSpacesProvider: SpacesProvider, SwitchableSpacesProvider {
 
         let group = DispatchGroup()
 
-        // 1. Fetch Spaces
         group.enter()
         DispatchQueue.global(qos: .userInitiated).async {
             spaces = self.fetchSpaces()
             group.leave()
         }
 
-        // 2. Fetch Windows
         group.enter()
         DispatchQueue.global(qos: .userInitiated).async {
             windows = self.fetchWindows()
             group.leave()
         }
 
-        // 3. Fetch Focused Space (Optional, if you want full correctness)
         group.enter()
         DispatchQueue.global(qos: .userInitiated).async {
             focusedSpace = self.fetchFocusedSpace()
             group.leave()
         }
 
-        // 4. Fetch Focused Window (Optional)
         group.enter()
         DispatchQueue.global(qos: .userInitiated).async {
             focusedWindow = self.fetchFocusedWindow()
             group.leave()
         }
 
-        // Wait for all commands to finish
         group.wait()
 
-        // Safely unwrap results
         guard var spaces = spaces, let windows = windows else {
             return nil
         }
