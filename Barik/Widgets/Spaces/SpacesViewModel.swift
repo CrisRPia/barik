@@ -29,12 +29,6 @@ class SpacesViewModel: ObservableObject {
 
                 if bytesRead > 0 {
                     self.loadSpaces()
-                    
-                    DispatchQueue.global(qos: .background).asyncAfter(
-                        deadline: .now() + 0.5
-                    ) {
-                        self.loadSpaces()
-                    }
                 } else if bytesRead == -1 {
                     print("Error reading FIFO")
                     close(fileDescriptor)
