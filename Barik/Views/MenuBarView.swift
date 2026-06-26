@@ -20,7 +20,7 @@ struct MenuBarView: View {
             HStack(spacing: configManager.config.experimental.foreground.spacing) {
                 ForEach(0..<items.count, id: \.self) { index in
                     let item = items[index]
-                    buildView(for: item)
+                    buildEntry(for: item)
                 }
             }
 
@@ -37,8 +37,31 @@ struct MenuBarView: View {
         .preferredColorScheme(theme)
     }
 
+    /// Renders a top-level entry, which is either a single widget or a group
+    /// (a nested array). A group draws one shared background pill and lays its
+    /// members out tightly; members skip their own pill via the environment.
+    ///
+    /// `AnyView` erases the recursive call so this function's opaque return
+    /// type isn't self-referential.
     @ViewBuilder
-    private func buildView(for item: TomlWidgetItem) -> some View {
+    private func buildEntry(for item: TomlWidgetItem) -> some View {
+        if let children = item.children {
+            HStack(spacing: 8) {
+                ForEach(0..<children.count, id: \.self) { index in
+                    AnyView(
+                        buildEntry(for: children[index])
+                            .environment(\.insideWidgetGroup, true)
+                    )
+                }
+            }
+            .experimentalConfiguration(cornerRadius: 15)
+        } else {
+            buildWidget(for: item)
+        }
+    }
+
+    @ViewBuilder
+    private func buildWidget(for item: TomlWidgetItem) -> some View {
         let config = ConfigProvider(
             config: configManager.resolvedWidgetConfig(for: item))
 
@@ -51,6 +74,9 @@ struct MenuBarView: View {
 
         case "default.time":
             TimeWidget().environmentObject(config)
+
+        case "default.clock-group":
+            ClockGroupWidget().environmentObject(config)
 
         case "spacer":
             Spacer().frame(minWidth: 50, maxWidth: .infinity)

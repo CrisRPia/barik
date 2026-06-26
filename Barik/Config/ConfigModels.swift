@@ -116,10 +116,21 @@ struct WidgetsSection: Decodable {
 struct TomlWidgetItem: Decodable {
     let id: String
     let inlineParams: ConfigData
+    /// Non-nil when this entry is a group: a nested array in `displayed`,
+    /// e.g. `[ "default.battery", "default.time" ]`. Grouped widgets render
+    /// inside a single shared background pill.
+    let children: [TomlWidgetItem]?
 
-    init(id: String, inlineParams: ConfigData) {
+    var isGroup: Bool { children != nil }
+
+    init(
+        id: String,
+        inlineParams: ConfigData,
+        children: [TomlWidgetItem]? = nil
+    ) {
         self.id = id
         self.inlineParams = inlineParams
+        self.children = children
     }
 
     init(from decoder: Decoder) throws {
@@ -128,6 +139,14 @@ struct TomlWidgetItem: Decodable {
         if let strValue = try? container.decode(String.self) {
             self.id = strValue
             self.inlineParams = [:]
+            self.children = nil
+            return
+        }
+
+        if let group = try? container.decode([TomlWidgetItem].self) {
+            self.id = "group"
+            self.inlineParams = [:]
+            self.children = group
             return
         }
 
@@ -147,6 +166,7 @@ struct TomlWidgetItem: Decodable {
 
         self.id = widgetId
         self.inlineParams = params
+        self.children = nil
     }
 }
 

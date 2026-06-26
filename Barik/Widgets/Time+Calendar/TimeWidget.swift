@@ -38,7 +38,7 @@ struct TimeWidget: View {
 }
 
 /// Main-thread-only cache of `DateFormatter`s keyed by pattern + time zone.
-private enum TimeFormatterCache {
+enum TimeFormatterCache {
     static var formatters: [String: DateFormatter] = [:]
 
     static func formatter(pattern: String, timeZone: TimeZone) -> DateFormatter {
