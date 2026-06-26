@@ -49,6 +49,10 @@ struct AnySpace: Identifiable, Equatable {
     let id: String
     let isFocused: Bool
     let windows: [AnyWindow]
+    /// The window focusing this space would land on: its most-recently-used
+    /// window (tracked over the session), or the top of the stack as a guess.
+    /// Populated by `SpacesViewModel`, not the providers.
+    var emphasizedWindowID: Int?
 
     init<S: SpaceModel>(_ space: S) {
         if let aero = space as? AeroSpace {
@@ -65,6 +69,7 @@ struct AnySpace: Identifiable, Equatable {
     static func == (lhs: AnySpace, rhs: AnySpace) -> Bool {
         return lhs.id == rhs.id && lhs.isFocused == rhs.isFocused
             && lhs.windows == rhs.windows
+            && lhs.emphasizedWindowID == rhs.emphasizedWindowID
     }
 }
 

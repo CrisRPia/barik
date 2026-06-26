@@ -53,7 +53,13 @@ private struct SpaceView: View {
             space.windows.contains { $0.isFocused } || space.isFocused
         let hasWindows = !space.windows.isEmpty
         HStack(spacing: 0) {
-            Spacer().frame(width: 10)
+            // Vertical highlight marks the focused (or hovered) space —
+            // replaces the old rounded pill so spaces pack tighter.
+            Capsule()
+                .fill(.white)
+                .opacity(isFocused ? 0.8 : (isHovered ? 0.3 : 0))
+                .frame(width: 2.5, height: 16)
+            Spacer().frame(width: 6)
             if showKey {
                 Text(space.id)
                     .font(.headline)
@@ -63,53 +69,24 @@ private struct SpaceView: View {
                     Spacer().frame(width: 5)
                 }
             }
-            HStack(spacing: 2) {
-                ForEach(space.windows) { window in
+            // Windows overlap into a compact stack; the focused space fans
+            // them out to full spacing so each is visible and clickable.
+            HStack(spacing: isFocused ? 2 : -13) {
+                ForEach(Array(space.windows.enumerated()), id: \.element.id) {
+                    offset, window in
                     WindowView(
                         window: window,
                         space: space,
-                        windowNamespace: windowNamespace
+                        windowNamespace: windowNamespace,
+                        isStacked: !isFocused
                     )
+                    .zIndex(Double(space.windows.count - offset))
                 }
             }
-            Spacer().frame(width: 10)
+            Spacer().frame(width: 6)
         }
         .frame(height: 30)
-        .background(
-            ZStack {
-                if isFocused {
-                    RoundedRectangle(cornerRadius: 100, style: .continuous)
-                        .fill(.white)
-                        .opacity(0.2)
-                        .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
-                } else if isHovered {
-                    RoundedRectangle(cornerRadius: 100, style: .continuous)
-                        .fill(.white)
-                        .opacity(0.1)
-                }
-            }
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 100, style: .continuous)
-                .stroke(
-                    LinearGradient(
-                        colors: [
-                            .white.opacity(isFocused ? 0.3 : 0),
-                            .white.opacity(isFocused ? 0.1 : 0),
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1
-                )
-        )  // This ensures the first and last spaces align perfectly with the widget's edges.
-        .clipShape(
-            RoundedRectangle(
-                cornerRadius: foregroundHeight < 30 ? 0 : 100,
-                style: .continuous
-            )
-        )
-        .shadow(color: .shadow, radius: foregroundHeight < 30 ? 0 : 2)
+        .contentShape(Rectangle())
         .transition(.blurReplace)
         .onTapGesture {
             viewModel.switchToSpace(space, needWindowFocus: true)
@@ -143,6 +120,9 @@ private struct WindowView: View {
     let window: AnyWindow
     let space: AnySpace
     var windowNamespace: Namespace.ID
+    /// True when this window is part of an overlapping (non-focused) stack.
+    /// Drives a directional shadow so the stack reads as layered cards.
+    var isStacked: Bool = false
 
     @State var isHovered = false
 
@@ -155,7 +135,12 @@ private struct WindowView: View {
             sameAppCount > 1
                 && !alwaysDisplayAppTitleFor.contains { $0 == window.appName }
             ? window.title : (window.appName ?? "")
-        let spaceIsFocused = space.windows.contains { $0.isFocused }
+        // The window this space would focus into (actually-focused for the
+        // active space, MRU for inactive ones). It stays full-opacity while
+        // the rest of the stack dims back.
+        let isPrimary =
+            space.emphasizedWindowID == nil
+            || window.id == space.emphasizedWindowID
         HStack {
             ZStack {
                 if let icon = window.appIcon {
@@ -167,10 +152,10 @@ private struct WindowView: View {
                         )
                         .frame(width: size, height: size)
                         .shadow(
-                            color: .black.opacity(0.2),
-                            radius: 3,
-                            x: 0,
-                            y: 1
+                            color: .black.opacity(isStacked ? 0.5 : 0.2),
+                            radius: isStacked ? 2.5 : 3,
+                            x: isStacked ? 3 : 0,
+                            y: isStacked ? 1 : 1
                         )
                 } else {
                     Image(systemName: "questionmark.circle")
@@ -178,7 +163,9 @@ private struct WindowView: View {
                         .frame(width: size, height: size)
                 }
             }
-            .opacity(spaceIsFocused && !window.isFocused ? 0.5 : 1)
+            // Dim non-primary windows by darkening (not opacity) so stacked
+            // icons stay solid and don't bleed through one another.
+            .colorMultiply(isPrimary ? .white : Color(white: 0.6))
             .transition(.blurReplace)
 
             if window.isFocused, !title.isEmpty, showTitle {

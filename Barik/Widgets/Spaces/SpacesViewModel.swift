@@ -11,6 +11,9 @@ class SpacesViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
 
     private var provider: AnySpacesProvider?
+    /// space id -> most-recently-focused window id, accumulated as the user
+    /// moves around. Lets inactive spaces show the window they'd focus into.
+    private var lastFocusedByID: [String: Int] = [:]
     private let pipePath = (NSTemporaryDirectory() as NSString)
         .appendingPathComponent("barik.fifo")
     private let pipeQueue = DispatchQueue(
@@ -79,10 +82,36 @@ class SpacesViewModel: ObservableObject {
                 let spaces = provider.getSpacesWithWindows() ?? []
                 let sorted = spaces.sorted { $0.id < $1.id }
 
+                // Remember the focused window as its space's MRU window.
+                if let focusedSpace = sorted.first(where: { space in
+                    space.windows.contains { $0.isFocused }
+                }),
+                    let focusedWindow = focusedSpace.windows.first(where: {
+                        $0.isFocused
+                    })
+                {
+                    self.lastFocusedByID[focusedSpace.id] = focusedWindow.id
+                }
+
+                // Annotate each space with the window focusing it would land
+                // on: the remembered MRU window if still open, else the top of
+                // the stack as a fallback.
+                let annotated = sorted.map { space -> AnySpace in
+                    var space = space
+                    if let mru = self.lastFocusedByID[space.id],
+                        space.windows.contains(where: { $0.id == mru })
+                    {
+                        space.emphasizedWindowID = mru
+                    } else {
+                        space.emphasizedWindowID = space.windows.first?.id
+                    }
+                    return space
+                }
+
                 let duration = Date().timeIntervalSince(start)
                 Logger.spaces.debug("🐢 DONE: Took \(String(format: "%.2f", duration))s")
 
-                promise(.success(sorted))
+                promise(.success(annotated))
             }
         }
         .eraseToAnyPublisher()
