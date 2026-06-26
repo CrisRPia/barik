@@ -118,7 +118,6 @@ class AerospaceSpacesProvider: SpacesProvider, SwitchableSpacesProvider {
             let data = runAerospaceCommand(arguments: [
                 "list-windows", "--all", "--json", "--format",
                 "%{window-id} %{app-name} %{window-title} %{workspace}",
-                "--sort-by", "dfs-index"
             ])
         else {
             return nil

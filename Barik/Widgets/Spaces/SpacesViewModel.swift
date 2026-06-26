@@ -1,43 +1,23 @@
 import AppKit
 import Combine
 import Foundation
+import OSLog
 
 class SpacesViewModel: ObservableObject {
     @Published var spaces: [AnySpace] = []
-    private var timer: Timer?
+    
+    // Combine Pipeline
+    private let refreshSubject = PassthroughSubject<Void, Never>()
+    private var cancellables = Set<AnyCancellable>()
+
     private var provider: AnySpacesProvider?
     private let pipePath = (NSTemporaryDirectory() as NSString)
         .appendingPathComponent("barik.fifo")
-
-    private func setupNamedPipe() {
-        unlink(pipePath)
-        mkfifo(pipePath, 0o666)
-
-        DispatchQueue.global(qos: .userInteractive).async {
-            let fileDescriptor = open(self.pipePath, O_RDWR)
-
-            guard fileDescriptor != -1 else {
-                print("Failed to open FIFO")
-                return
-            }
-
-            var buffer = [UInt8](repeating: 0, count: 1024)
-
-            while true {
-                let bytesRead = read(fileDescriptor, &buffer, 1024)
-
-                if bytesRead > 0 {
-                    self.loadSpaces()
-                } else if bytesRead == -1 {
-                    print("Error reading FIFO")
-                    close(fileDescriptor)
-                    usleep(1_000_000)
-                    self.setupNamedPipe()
-                    return
-                }
-            }
-        }
-    }
+    private let pipeQueue = DispatchQueue(
+        label: "com.app.pipeQueue",
+        qos: .userInteractive
+    )
+    private var pipeSource: DispatchSourceRead?
 
     init() {
         let runningApps = NSWorkspace.shared.runningApplications.compactMap {
@@ -50,44 +30,115 @@ class SpacesViewModel: ObservableObject {
         } else {
             provider = nil
         }
+
         setupNamedPipe()
-        startMonitoring()
+        setupPipeline()
+
+        // Initial load
+        refreshSubject.send()
     }
 
     deinit {
-        stopMonitoring()
+        cleanupPipe()
     }
 
-    private func startMonitoring() {
-        timer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) {
-            [weak self] _ in
-            self?.loadSpaces()
-        }
-        loadSpaces()
-    }
+    private func setupPipeline() {
+        let timerPublisher = Timer.publish(every: 15.0, on: .main, in: .common)
+            .autoconnect()
+            .map { _ in "Timer" }
 
-    private func stopMonitoring() {
-        timer?.invalidate()
-        timer = nil
-    }
-
-    private func loadSpaces() {
-        DispatchQueue.global(qos: .userInteractive).async {
-            guard let provider = self.provider,
-                let spaces = provider.getSpacesWithWindows()
-            else {
-                DispatchQueue.main.async {
-                    self.spaces = []
-                }
-                return
+        refreshSubject
+            .map { "Pipe" }
+            .receive(on: DispatchQueue.main)
+            .merge(with: timerPublisher)
+            .handleEvents(receiveOutput: { source in
+                Logger.pipe.debug("🔵 PIPELINE: Received raw signal from \(source)")
+            })
+            .buffer(size: 1, prefetch: .keepFull, whenFull: .dropOldest)
+            .flatMap(maxPublishers: .max(1)) {
+                [weak self] _ -> AnyPublisher<[AnySpace], Never> in
+                return self?.fetchSpacesFuture()
+                    ?? Empty().eraseToAnyPublisher()
             }
-            let sortedSpaces = spaces.sorted { $0.id < $1.id }
-            DispatchQueue.main.async {
-                if self.spaces != sortedSpaces {
-                    self.spaces = sortedSpaces
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$spaces)
+    }
+
+    private func fetchSpacesFuture() -> AnyPublisher<[AnySpace], Never> {
+        return Future { [weak self] promise in
+            DispatchQueue.global(qos: .userInteractive).async {
+                guard let self = self, let provider = self.provider else {
+                    promise(.success([]))
+                    return
                 }
+
+                Logger.spaces.debug("🚀 LOAD: Starting spaces fetch...")
+                let start = Date()
+
+                // This is the blocking work
+                let spaces = provider.getSpacesWithWindows() ?? []
+                let sorted = spaces.sorted { $0.id < $1.id }
+
+                let duration = Date().timeIntervalSince(start)
+                Logger.spaces.debug("🐢 DONE: Took \(String(format: "%.2f", duration))s")
+
+                promise(.success(sorted))
             }
         }
+        .eraseToAnyPublisher()
+    }
+
+    private func setupNamedPipe() {
+        cleanupPipe()
+
+        mkfifo(pipePath, 0o666)
+
+        let fd = open(pipePath, O_RDWR | O_NONBLOCK)
+        guard fd != -1 else { return }
+
+        let source = DispatchSource.makeReadSource(
+            fileDescriptor: fd,
+            queue: pipeQueue
+        )
+        pipeSource = source
+
+        source.setEventHandler { [weak self] in
+            Logger.pipe.trace("⚡️ EVENT HANDLER: Woke up")
+
+            var buffer = [UInt8](repeating: 0, count: 1024)
+            var totalBytesRead = 0
+            var loops = 0
+
+            while true {
+                let bytesRead = read(fd, &buffer, 1024)
+                if bytesRead <= 0 { break }
+                totalBytesRead += bytesRead
+                loops += 1
+            }
+
+            Logger.pipe.trace("🧹 DRAINED: \(totalBytesRead) bytes in \(loops) loops")
+
+            if totalBytesRead > 0 {
+                Logger.pipe.trace("➡️ SIGNAL: Sending to Combine pipeline")
+                self?.refreshSubject.send()
+            } else {
+                Logger.pipe.trace(
+                    "⚠️ WARNING: Woke up but read 0 bytes (Spurious Wakeup)"
+                )
+            }
+        }
+
+        source.setCancelHandler {
+            close(fd)
+        }
+
+        source.resume()
+    }
+
+    private func cleanupPipe() {
+        pipeSource?.cancel()
+        pipeSource = nil
+        unlink(pipePath)
     }
 
     func switchToSpace(_ space: AnySpace, needWindowFocus: Bool = false) {

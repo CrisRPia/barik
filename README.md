@@ -8,15 +8,22 @@ every 0.1 seconds by using aerospace callbacks.
 
 If you wish to use this, you will have to compile and install it from source.
 
-``` bash
-xcodebuild -project Barik.xcodeproj \
-  -scheme Barik \
-  -configuration Release \
-  -derivedDataPath ./build \
-  build
+This builds with SwiftPM and the Command Line Tools only — **no full Xcode
+required**. `build.sh` compiles with `swift build`, assembles `Barik.app`, and
+ad-hoc code-signs it with the entitlements in `Barik/Barik.entitlements`.
 
-cp -R ./build/Build/Products/Release/Barik.app /Applications/
+``` bash
+# Build ./Barik.app (release)
+./build.sh
+
+# Build and install to /Applications
+./build.sh --install
 ```
+
+> Note: the app's `Localizable.xcstrings` String Catalog is *not* bundled,
+> because compiling it requires `xcstringstool` which ships only with full
+> Xcode. Non-English strings fall back to their keys. Everything else works
+> with Command Line Tools alone.
 
 This also depends on [a branch of aerospace which is yet to merge](https://github.com/nikitabobko/AeroSpace/pull/1918)
 
