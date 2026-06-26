@@ -46,19 +46,11 @@ struct MenuBarView: View {
         case "default.spaces":
             SpacesWidget().environmentObject(config)
 
-        case "default.network":
-            NetworkWidget().environmentObject(config)
-
         case "default.battery":
             BatteryWidget().environmentObject(config)
 
         case "default.time":
-            TimeWidget(calendarManager: CalendarManager(configProvider: config))
-                .environmentObject(config)
-            
-        case "default.nowplaying":
-            NowPlayingWidget()
-                .environmentObject(config)
+            TimeWidget().environmentObject(config)
 
         case "spacer":
             Spacer().frame(minWidth: 50, maxWidth: .infinity)
