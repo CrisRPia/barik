@@ -3,6 +3,8 @@ import Foundation
 import IOKit
 import IOKit.ps
 
+private let powerPollInterval: TimeInterval = 30
+
 class BatteryManager: ObservableObject {
     @Published var batteryLevel: Int = 0
     @Published var isCharging: Bool = false
@@ -19,6 +21,8 @@ class BatteryManager: ObservableObject {
     private var lowPowerObserver: NSObjectProtocol?
 
     private var randomTimer: Timer?
+    private var powerTimer: Timer?
+    private var gate: AnyCancellable?
 
     init() {
         lowPowerObserver = NotificationCenter.default.addObserver(
@@ -38,6 +42,7 @@ class BatteryManager: ObservableObject {
     deinit {
         stopMonitoring()
         randomTimer?.invalidate()
+        powerTimer?.invalidate()
         if let lowPowerObserver {
             NotificationCenter.default.removeObserver(lowPowerObserver)
         }
@@ -71,6 +76,17 @@ class BatteryManager: ObservableObject {
             guard let context = context else { return }
             let manager = Unmanaged<BatteryManager>.fromOpaque(context).takeUnretainedValue()
             manager.updateBatteryStatus()
+        }
+
+        // Refresh the rate gauge on a slow cadence for steady-state drift (the
+        // IOPS callback already covers plug/unplug instantly). Gated, so it
+        // stops when the menu bar is hidden or the machine is asleep.
+        // SamplingGate is main-actor isolated and this runs from init on the
+        // main thread, so bridge the isolation explicitly.
+        MainActor.assumeIsolated {
+            gate = SamplingGate.shared.$isActive.sink { [weak self] active in
+                self?.setPowerPolling(active)
+            }
         }
 
         if let source = IOPSNotificationCreateRunLoopSource(callback, context)?
@@ -116,6 +132,18 @@ class BatteryManager: ObservableObject {
                     self.isPluggedIn = isAC
                 }
             }
+        }
+    }
+
+    private func setPowerPolling(_ active: Bool) {
+        powerTimer?.invalidate()
+        powerTimer = nil
+        guard active else { return }
+        updatePower()  // refresh immediately on resume
+        powerTimer = Timer.scheduledTimer(
+            withTimeInterval: powerPollInterval, repeats: true
+        ) { [weak self] _ in
+            self?.updatePower()
         }
     }
 
