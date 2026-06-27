@@ -36,11 +36,13 @@ private struct ExperimentalConfigurationModifier: ViewModifier {
                         .padding(.horizontal, foregroundHeight < 45 && horizontalPadding != 15 ? 0 :
                                     foregroundHeight < 30 ? 0 : horizontalPadding
                         )
-                        .background(configManager.config.experimental.foreground.widgetsBackground.blur)
-                        .cornerRadius(foregroundHeight < 30 ? 0 : cornerRadius)
-                        .overlay(
-                            foregroundHeight < 30 ? nil :
-                                Capsule().stroke(Color.noActive, lineWidth: 1)
+                        // Real Liquid Glass replaces the old blur + stroke pill.
+                        .glassEffect(
+                            .regular,
+                            in: RoundedRectangle(
+                                cornerRadius: foregroundHeight < 30 ? 0 : cornerRadius,
+                                style: .continuous
+                            )
                         )
                 }
             }.scaleEffect(foregroundHeight < 25 ? 0.9 : 1, anchor: .leading)

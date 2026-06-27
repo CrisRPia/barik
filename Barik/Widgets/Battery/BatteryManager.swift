@@ -9,12 +9,34 @@ class BatteryManager: ObservableObject {
 
     private var runLoopSource: CFRunLoopSource?
 
+    private var randomTimer: Timer?
+
     init() {
-        startMonitoring()
+        if widgetDebugRandom {
+            startRandom()
+        } else {
+            startMonitoring()
+        }
     }
 
     deinit {
         stopMonitoring()
+        randomTimer?.invalidate()
+    }
+
+    private func startRandom() {
+        randomize()
+        randomTimer = Timer.scheduledTimer(
+            withTimeInterval: 1.5, repeats: true
+        ) { [weak self] _ in
+            DispatchQueue.main.async { self?.randomize() }
+        }
+    }
+
+    private func randomize() {
+        batteryLevel = Int.random(in: 0...100)
+        isCharging = Bool.random()
+        isPluggedIn = isCharging || Bool.random()
     }
 
     private func startMonitoring() {

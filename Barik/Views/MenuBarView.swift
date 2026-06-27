@@ -28,7 +28,6 @@ struct MenuBarView: View {
                 SystemBannerWidget(withLeftPadding: true)
             }
         }
-        .animation(.smooth)
         .foregroundStyle(Color.foregroundOutside)
         .frame(height: max(configManager.config.experimental.foreground.resolveHeight(), 1.0))
         .frame(maxWidth: .infinity)
@@ -71,6 +70,15 @@ struct MenuBarView: View {
 
         case "default.battery":
             BatteryWidget().environmentObject(config)
+
+        case "default.cpu":
+            CPUWidget().environmentObject(config)
+
+        case "default.ram":
+            RAMWidget().environmentObject(config)
+
+        case "default.network":
+            NetworkWidget().environmentObject(config)
 
         case "default.time":
             TimeWidget().environmentObject(config)

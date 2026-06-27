@@ -1,161 +1,115 @@
 import SwiftUI
 
+/// Battery as a grid of little squares that fill along a spiral (a circular
+/// motion). Lit squares are near-white; the frontier square is a very subtle
+/// green while charging / red while discharging, so the direction reads at a
+/// glance without an eye-catching color. Click → battery popup.
 struct BatteryWidget: View {
-    @EnvironmentObject var configProvider: ConfigProvider
-    var config: ConfigData { configProvider.config }
-    var showPercentage: Bool { config["show-percentage"]?.boolValue ?? true }
-    var warningLevel: Int { config["warning-level"]?.intValue ?? 20 }
-    var criticalLevel: Int { config["critical-level"]?.intValue ?? 10 }
-
     @StateObject private var batteryManager = BatteryManager()
-    private var level: Int { batteryManager.batteryLevel }
-    private var isCharging: Bool { batteryManager.isCharging }
-    private var isPluggedIn: Bool { batteryManager.isPluggedIn }
+    @State private var rect = CGRect()
 
-    @State private var rect: CGRect = CGRect()
+    private let cols = 10
+    private let rows = 5
+    private let cell: CGFloat = 2.2
+    private let gap: CGFloat = 0.8
+
+    private var total: Int { cols * rows }
+    private var level: Int { batteryManager.batteryLevel }
+    private var litCount: Int {
+        Int((Double(level) / 100 * Double(total)).rounded())
+    }
+    /// Spiral rank (fill order) for each flat grid index, outer ring inward.
+    private var rank: [Int] { Self.spiralRank(cols: cols, rows: rows) }
+
+    private let softGreen = Color(red: 0.5, green: 0.85, blue: 0.55)
+    private let softRed = Color(red: 0.92, green: 0.55, blue: 0.55)
 
     var body: some View {
-        ZStack {
-            ZStack(alignment: .leading) {
-                BatteryBodyView(mask: false)
-                    .opacity(showPercentage ? 0.3 : 0.4)
-                BatteryBodyView(mask: true)
-                    .clipShape(
-                        Rectangle().path(
-                            in: CGRect(
-                                x: showPercentage ? 0 : 2,
-                                y: 0,
-                                width: 30 * Int(level)
-                                    / (showPercentage ? 110 : 130),
-                                height: .bitWidth
-                            )
-                        )
-                    )
-                    .foregroundStyle(batteryColor)
-                BatteryText(
-                    level: level, isCharging: isCharging,
-                    isPluggedIn: isPluggedIn
-                )
-                .foregroundStyle(batteryTextColor)
-            }
-            .frame(width: 30, height: 10)
-            .background(
-                GeometryReader { geometry in
-                    Color.clear
-                        .onAppear {
-                            rect = geometry.frame(in: .global)
-                        }
-                        .onChange(of: geometry.frame(in: .global)) {
-                            oldState, newState in
-                            rect = newState
-                        }
-                }
-            )
+        HStack(spacing: gap) {
+            grid
+            // Battery terminal nub.
+            RoundedRectangle(cornerRadius: 0.5)
+                .fill(.foregroundOutside.opacity(0.5))
+                .frame(width: 1.6, height: cell * 2)
         }
+        .animation(.smooth(duration: 0.5), value: level)
+        .animation(.smooth(duration: 0.5), value: batteryManager.isCharging)
+        .shadow(color: .foregroundShadowOutside, radius: 3)
         .experimentalConfiguration(cornerRadius: 15)
         .frame(maxHeight: .infinity)
         .background(.black.opacity(0.001))
-        .onTapGesture {
-            MenuBarPopup.show(rect: rect, id: "battery") { BatteryPopup() }
-        }
-
-    }
-
-    private var batteryTextColor: Color {
-        if isCharging {
-            return .foregroundOutsideInvert
-        } else {
-            return level > warningLevel ? .foregroundOutsideInvert : .black
-        }
-    }
-
-    private var batteryColor: Color {
-        if isCharging {
-            return .green
-        } else {
-            if level <= criticalLevel {
-                return .red
-            } else if level <= warningLevel {
-                return .yellow
-            } else {
-                return .icon
+        .background(
+            GeometryReader { geometry in
+                Color.clear
+                    .onAppear { rect = geometry.frame(in: .global) }
+                    .onChange(of: geometry.frame(in: .global)) { _, new in
+                        rect = new
+                    }
             }
-        }
-    }
-}
-
-private struct BatteryText: View {
-    @EnvironmentObject var configProvider: ConfigProvider
-    var config: ConfigData { configProvider.config }
-    var showPercentage: Bool { config["show-percentage"]?.boolValue ?? true }
-
-    let level: Int
-    let isCharging: Bool
-    let isPluggedIn: Bool
-
-    var body: some View {
-        HStack(alignment: .center, spacing: -1) {
-            if showPercentage {
-                Text("\(level)")
-                    .font(.system(size: 12))
-                    .transition(.blurReplace)
-            }
-
-            if isCharging && level != 100 {
-                Image(systemName: "bolt.fill")
-                    .font(.system(size: showPercentage ? 8 : 10))
-            }
-
-            if !isCharging && isPluggedIn && level != 100 {
-                Image(systemName: "powerplug.portrait.fill")
-                    .font(.system(size: 8))
-                    .padding(.leading, 1)
-            }
-        }
-        .foregroundStyle(
-            showPercentage ? .foregroundOutsideInvert : .foregroundOutside
         )
-        .fontWeight(.semibold)
-        .transition(.blurReplace)
-        .animation(.smooth, value: isCharging)
-        .frame(width: 26, height: 15)
-    }
-}
-
-private struct BatteryBodyView: View {
-    let mask: Bool
-
-    @EnvironmentObject var configProvider: ConfigProvider
-    var config: ConfigData { configProvider.config }
-    var showPercentage: Bool { config["show-percentage"]?.boolValue ?? true }
-
-    var body: some View {
-        ZStack {
-            if showPercentage || !mask {
-                Image(systemName: "battery.0")
-                    .resizable()
-                    .scaledToFit()
-            }
-            if showPercentage || mask {
-                Rectangle()
-                    .clipShape(RoundedRectangle(cornerRadius: 2))
-                    .padding(.horizontal, showPercentage ? 3 : 4.4)
-                    .padding(.vertical, showPercentage ? 2 : 3.5)
-                    .offset(
-                        x: showPercentage ? -2 : -1.77,
-                        y: showPercentage ? 0 : 0.2)
+        .onTapGesture {
+            MenuBarPopup.show(rect: rect, id: "resources") {
+                ResourceDashboardPopup()
             }
         }
-        .compositingGroup()
     }
-}
 
-struct BatteryWidget_Previews: PreviewProvider {
-    static var previews: some View {
-        ZStack {
-            BatteryWidget()
-        }.frame(width: 200, height: 100)
-            .background(.yellow)
-            .environmentObject(ConfigProvider(config: [:]))
+    private var grid: some View {
+        VStack(spacing: gap) {
+            ForEach(0..<rows, id: \.self) { r in
+                HStack(spacing: gap) {
+                    ForEach(0..<cols, id: \.self) { c in
+                        RoundedRectangle(cornerRadius: 0.5)
+                            .fill(color(forRank: rank[r * cols + c]))
+                            .frame(width: cell, height: cell)
+                    }
+                }
+            }
+        }
+    }
+
+    private func color(forRank rank: Int) -> Color {
+        guard rank < litCount else {
+            return .foregroundOutside.opacity(0.15)
+        }
+        // Frontier (last-lit) square hints the direction, subtly.
+        if rank == litCount - 1 {
+            if batteryManager.isCharging { return softGreen }
+            if !batteryManager.isPluggedIn { return softRed }
+        }
+        return .foregroundOutside
+    }
+
+    /// Maps each flat grid index to its position in a clockwise spiral that
+    /// starts at the outer edge and works inward.
+    private static func spiralRank(cols: Int, rows: Int) -> [Int] {
+        var rank = [Int](repeating: 0, count: cols * rows)
+        var top = 0, bottom = rows - 1, left = 0, right = cols - 1
+        var order = 0
+        func set(_ r: Int, _ c: Int) {
+            rank[r * cols + c] = order
+            order += 1
+        }
+        while top <= bottom, left <= right {
+            for c in left...right { set(top, c) }
+            top += 1
+            if top <= bottom {
+                for r in top...bottom { set(r, right) }
+            }
+            right -= 1
+            if top <= bottom, left <= right {
+                for c in stride(from: right, through: left, by: -1) {
+                    set(bottom, c)
+                }
+                bottom -= 1
+            }
+            if left <= right, top <= bottom {
+                for r in stride(from: bottom, through: top, by: -1) {
+                    set(r, left)
+                }
+                left += 1
+            }
+        }
+        return rank
     }
 }

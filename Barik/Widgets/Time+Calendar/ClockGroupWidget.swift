@@ -8,6 +8,7 @@ import SwiftUI
 /// { "default.clock-group" = { format = "H:mm", zones = [
 ///     { time-zone = "America/Guatemala", label = "HN" },
 ///     { time-zone = "GMT",               label = "GMT" },
+///     { date-format = "d MMM" },  // local time, with the live date as caption
 /// ] } }
 /// ```
 struct ClockGroupWidget: View {
@@ -19,7 +20,11 @@ struct ClockGroupWidget: View {
     private struct Zone: Identifiable {
         let id: Int
         let timeZone: TimeZone
-        let label: String
+        /// Omitted/empty in config → the column is just the time, no label.
+        let label: String?
+        /// When set, the caption shows the live date in this pattern (in the
+        /// zone's time zone) instead of the static `label`.
+        let dateFormat: String?
     }
 
     private var zones: [Zone] {
@@ -30,8 +35,10 @@ struct ClockGroupWidget: View {
             let tz =
                 dict["time-zone"]?.stringValue
                 .flatMap(TimeZone.init(identifier:)) ?? .current
-            let label = dict["label"]?.stringValue ?? tz.identifier
-            return Zone(id: index, timeZone: tz, label: label)
+            let label = dict["label"]?.stringValue
+            let dateFormat = dict["date-format"]?.stringValue
+            return Zone(
+                id: index, timeZone: tz, label: label, dateFormat: dateFormat)
         }
     }
 
@@ -43,9 +50,11 @@ struct ClockGroupWidget: View {
         HStack(spacing: 14) {
             ForEach(zones) { zone in
                 VStack(spacing: -1) {
-                    Text(zone.label)
-                        .font(.system(size: 9, weight: .semibold))
-                        .opacity(0.55)
+                    if let caption = caption(for: zone) {
+                        Text(caption)
+                            .font(.system(size: 9, weight: .semibold))
+                            .opacity(0.55)
+                    }
                     Text(time(in: zone.timeZone))
                         .fontWeight(.semibold)
                         .font(.headline)
@@ -64,5 +73,17 @@ struct ClockGroupWidget: View {
     private func time(in timeZone: TimeZone) -> String {
         TimeFormatterCache.formatter(pattern: format, timeZone: timeZone)
             .string(from: now)
+    }
+
+    /// The dim caption above the time: a live date if `date-format` is set,
+    /// else the static label, else nothing.
+    private func caption(for zone: Zone) -> String? {
+        if let dateFormat = zone.dateFormat {
+            return TimeFormatterCache.formatter(
+                pattern: dateFormat, timeZone: zone.timeZone
+            ).string(from: now)
+        }
+        if let label = zone.label, !label.isEmpty { return label }
+        return nil
     }
 }
