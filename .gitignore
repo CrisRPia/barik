@@ -219,3 +219,6 @@ xcuserdata/
 
 # SwiftPM build artifact
 /Barik.app
+
+# Serena MCP local project config
+.serena/
