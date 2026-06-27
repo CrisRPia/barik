@@ -60,7 +60,9 @@ class AerospaceSpacesProvider: SpacesProvider, SwitchableSpacesProvider {
                     space.windows.append(mutableWindow)
                     spaceDict[ws] = space
                 }
-            } else if let focusedSpace = fetchFocusedSpace() {
+            } else if let focusedSpace {
+                // Reuse the focused space already fetched above — re-running the
+                // aerospace subprocess per window here was needless.
                 if var space = spaceDict[focusedSpace.id] {
                     space.windows.append(mutableWindow)
                     spaceDict[focusedSpace.id] = space

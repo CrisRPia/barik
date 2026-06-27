@@ -18,9 +18,12 @@ class SpacesViewModel: ObservableObject {
         .appendingPathComponent("barik.fifo")
     private let pipeQueue = DispatchQueue(
         label: "com.app.pipeQueue",
-        qos: .userInteractive
+        qos: .userInitiated
     )
     private var pipeSource: DispatchSourceRead?
+
+    /// Mirrors SamplingGate so the fallback poll can pause when hidden/asleep.
+    private var gateActive = true
 
     init() {
         let runningApps = NSWorkspace.shared.runningApplications.compactMap {
@@ -37,6 +40,15 @@ class SpacesViewModel: ObservableObject {
         setupNamedPipe()
         setupPipeline()
 
+        // SamplingGate is main-actor isolated; init runs on the main thread, so
+        // bridge the isolation explicitly. The pipe (event-driven) keeps
+        // working; only the 15s fallback poll is gated.
+        MainActor.assumeIsolated {
+            SamplingGate.shared.$isActive
+                .sink { [weak self] in self?.gateActive = $0 }
+                .store(in: &cancellables)
+        }
+
         // Initial load
         refreshSubject.send()
     }
@@ -48,6 +60,7 @@ class SpacesViewModel: ObservableObject {
     private func setupPipeline() {
         let timerPublisher = Timer.publish(every: 15.0, on: .main, in: .common)
             .autoconnect()
+            .filter { [weak self] _ in self?.gateActive ?? false }
             .map { _ in "Timer" }
 
         refreshSubject
@@ -69,7 +82,7 @@ class SpacesViewModel: ObservableObject {
 
     private func fetchSpacesFuture() -> AnyPublisher<[AnySpace], Never> {
         return Future { [weak self] promise in
-            DispatchQueue.global(qos: .userInteractive).async {
+            DispatchQueue.global(qos: .userInitiated).async {
                 guard let self = self, let provider = self.provider else {
                     promise(.success([]))
                     return
@@ -181,6 +194,17 @@ class SpacesViewModel: ObservableObject {
 
     func switchToWindow(_ window: AnyWindow) {
         DispatchQueue.global(qos: .userInitiated).async {
+            self.provider?.focusWindow(windowId: String(window.id))
+        }
+    }
+
+    /// Switch to a space, then focus a specific window in it. The brief settle
+    /// delay lets the WM apply the workspace switch first; it runs on a
+    /// background queue (never the main thread, which would freeze the UI).
+    func switchToSpace(_ space: AnySpace, thenFocus window: AnyWindow) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            self.provider?.focusSpace(spaceId: space.id, needWindowFocus: false)
+            usleep(100_000)
             self.provider?.focusWindow(windowId: String(window.id))
         }
     }
