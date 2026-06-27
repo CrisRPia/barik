@@ -7,29 +7,22 @@ struct TimeWidget: View {
     var format: String { config["format"]?.stringValue ?? "E d, J:mm" }
     var timeZone: String? { config["time-zone"]?.stringValue }
 
-    @State private var currentTime = Date()
-
-    private let timer = Timer.publish(every: 1, on: .main, in: .common)
-        .autoconnect()
+    @ObservedObject private var ticker = ClockTicker.shared
 
     var body: some View {
-        Text(formattedTime(pattern: format, from: currentTime))
+        Text(formattedTime(pattern: format, from: ticker.now))
             .fontWeight(.semibold)
             .font(.headline)
             .foregroundStyle(.foregroundOutside)
             .shadow(color: .foregroundShadowOutside, radius: 3)
-            .onReceive(timer) { date in
-                currentTime = date
-            }
             .experimentalConfiguration(cornerRadius: 15)
             .frame(maxHeight: .infinity)
             .background(.black.opacity(0.001))
             .monospacedDigit()
     }
 
-    // Format the current time. Formatters are cached by pattern + time zone:
-    // the clock re-renders every second and `DateFormatter` is expensive to
-    // allocate.
+    // Format the current time. Formatters are cached by pattern + time zone
+    // because `DateFormatter` is expensive to allocate.
     private func formattedTime(pattern: String, from time: Date) -> String {
         let tz = timeZone.flatMap(TimeZone.init(identifier:)) ?? .current
         return TimeFormatterCache.formatter(pattern: pattern, timeZone: tz)

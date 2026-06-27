@@ -31,8 +31,8 @@ struct Sparkline: Shape {
 }
 
 /// Mirrored throughput chart: download grows up from the centre line, upload
-/// down. New samples enter at the right and the whole waveform slides left by
-/// exactly one sample-step each tick (a true scroll, not a height morph).
+/// down. The waveform redraws in place once per sample — no continuous scroll
+/// animation, which would keep the CPU/compositor busy every frame.
 struct MirroredThroughputChart: View {
     /// Normalized (0...1), oldest first.
     let down: [Double]
@@ -41,13 +41,6 @@ struct MirroredThroughputChart: View {
     let halfHeight: CGFloat
     let downColor: Color
     let upColor: Color
-    let interval: TimeInterval
-
-    @State private var slide: CGFloat = 0
-
-    private var stepX: CGFloat {
-        down.count > 1 ? width / CGFloat(down.count - 1) : 0
-    }
 
     var body: some View {
         VStack(spacing: 1) {
@@ -59,22 +52,11 @@ struct MirroredThroughputChart: View {
                 .frame(height: halfHeight)
         }
         .frame(width: width)
-        // Slide trick: when a new sample lands, jump right by one step (which
-        // reproduces the previous frame's look) then animate back to 0 — so the
-        // line scrolls left continuously and the new point eases in from the
-        // right, instead of every point jumping a notch.
-        .offset(x: slide)
-        .frame(width: width, alignment: .leading)
-        .clipped()
         .overlay(
             Rectangle()
                 .fill(.foregroundOutside.opacity(0.3))
                 .frame(height: 1)
         )
-        .onChange(of: down) { _, _ in
-            slide = stepX
-            withAnimation(.linear(duration: interval)) { slide = 0 }
-        }
     }
 }
 
@@ -99,8 +81,7 @@ struct NetworkWidget: View {
             width: chartWidth,
             halfHeight: halfHeight,
             downColor: .foregroundOutside,
-            upColor: .foregroundOutside.opacity(0.5),
-            interval: 1
+            upColor: .foregroundOutside.opacity(0.5)
         )
         .shadow(color: .foregroundShadowOutside, radius: 3)
         .experimentalConfiguration(cornerRadius: 15)

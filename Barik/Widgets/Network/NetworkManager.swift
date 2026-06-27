@@ -24,16 +24,32 @@ final class NetworkManager: ObservableObject {
     private let interval: TimeInterval
     private var previous: (rx: UInt64, tx: UInt64)?
     private var timer: AnyCancellable?
+    private var gate: AnyCancellable?
 
     init(capacity: Int = 30, interval: TimeInterval = 1) {
         self.capacity = capacity
         self.interval = interval
         // Seed with a flat baseline so the sparkline draws immediately.
         history = Array(repeating: NetSample(), count: capacity)
+        // Pause when the menu bar isn't visible (this is the app's heaviest
+        // wakeup source). @Published replays the current value, starting it.
+        gate = SamplingGate.shared.$isActive.sink { [weak self] active in
+            active ? self?.resume() : self?.suspend()
+        }
+    }
+
+    private func resume() {
+        guard timer == nil else { return }
+        // Re-prime so the first post-resume delta spans one interval, not the
+        // whole hidden/asleep gap (which would read as a huge spike).
         previous = Self.readCounters()
         timer = Timer.publish(every: interval, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in self?.tick() }
+    }
+
+    private func suspend() {
+        timer = nil
     }
 
     var current: NetSample { history.last ?? NetSample() }

@@ -60,14 +60,21 @@ final class CPUManager: ObservableObject {
     private let liveInterval: TimeInterval
     private var sampler = CPUSampler()
     private var timer: AnyCancellable?
+    private var gate: AnyCancellable?
     private var isLive = false
+    private var gateActive = true
 
     private static let coreCount = ProcessInfo.processInfo.activeProcessorCount
 
     init(idleInterval: TimeInterval = 10, liveInterval: TimeInterval = 1) {
         self.idleInterval = idleInterval
         self.liveInterval = liveInterval
-        start(interval: idleInterval)
+        // Drives start/stop; @Published replays the current value immediately,
+        // so this also kicks off the initial timer.
+        gate = SamplingGate.shared.$isActive.sink { [weak self] active in
+            self?.gateActive = active
+            self?.restart()
+        }
         // Populate immediately so the chart isn't empty until the first tick.
         // Random mode can fill at once; the real sampler needs a brief window
         // to produce a meaningful first delta.
@@ -82,16 +89,20 @@ final class CPUManager: ObservableObject {
     func setLive(_ live: Bool) {
         guard live != isLive else { return }
         isLive = live
-        start(interval: live ? liveInterval : idleInterval)
+        restart()
     }
 
-    private func start(interval: TimeInterval) {
+    private func restart() {
+        timer = nil
+        guard gateActive else { return }
         // Re-prime the counters so the next sample's delta spans exactly the
-        // new window, not a leftover one from the previous cadence.
+        // new window, not a leftover one from the previous cadence / sleep gap.
         _ = sampler.sample()
-        timer = Timer.publish(every: interval, on: .main, in: .common)
-            .autoconnect()
-            .sink { [weak self] _ in self?.tick() }
+        timer = Timer.publish(
+            every: isLive ? liveInterval : idleInterval, on: .main, in: .common
+        )
+        .autoconnect()
+        .sink { [weak self] _ in self?.tick() }
     }
 
     private func tick() {

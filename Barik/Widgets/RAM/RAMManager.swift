@@ -30,23 +30,34 @@ final class RAMManager: ObservableObject {
     private let idleInterval: TimeInterval
     private let liveInterval: TimeInterval
     private var timer: AnyCancellable?
+    private var gate: AnyCancellable?
     private var isLive = false
+    private var gateActive = true
 
     init(idleInterval: TimeInterval = 10, liveInterval: TimeInterval = 1) {
         self.idleInterval = idleInterval
         self.liveInterval = liveInterval
         tick()  // immediate first draw
-        // In debug, refresh fast enough to watch without hovering.
-        start(interval: widgetDebugRandom ? 2 : idleInterval)
+        // @Published replays the current value, so this also starts the timer.
+        gate = SamplingGate.shared.$isActive.sink { [weak self] active in
+            self?.gateActive = active
+            self?.restart()
+        }
     }
 
     func setLive(_ live: Bool) {
         guard live != isLive else { return }
         isLive = live
-        start(interval: live ? liveInterval : idleInterval)
+        restart()
     }
 
-    private func start(interval: TimeInterval) {
+    private func restart() {
+        timer = nil
+        guard gateActive else { return }
+        // Memory is stateless to read, so no priming needed; debug refreshes
+        // fast enough to watch without hovering.
+        let interval =
+            widgetDebugRandom ? 2 : (isLive ? liveInterval : idleInterval)
         timer = Timer.publish(every: interval, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in self?.tick() }

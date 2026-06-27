@@ -42,9 +42,8 @@ struct ClockGroupWidget: View {
         }
     }
 
-    @State private var now = Date()
-    private let timer = Timer.publish(every: 1, on: .main, in: .common)
-        .autoconnect()
+    @ObservedObject private var ticker = ClockTicker.shared
+    private var now: Date { ticker.now }
 
     var body: some View {
         HStack(spacing: 14) {
@@ -64,7 +63,6 @@ struct ClockGroupWidget: View {
         }
         .foregroundStyle(.foregroundOutside)
         .shadow(color: .foregroundShadowOutside, radius: 3)
-        .onReceive(timer) { now = $0 }
         .experimentalConfiguration(cornerRadius: 15)
         .frame(maxHeight: .infinity)
         .background(.black.opacity(0.001))
