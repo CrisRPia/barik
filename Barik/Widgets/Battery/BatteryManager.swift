@@ -1,17 +1,33 @@
 import Combine
 import Foundation
+import IOKit
 import IOKit.ps
 
 class BatteryManager: ObservableObject {
     @Published var batteryLevel: Int = 0
     @Published var isCharging: Bool = false
     @Published var isPluggedIn: Bool = false
+    /// Instantaneous power flow in watts: positive = charging, negative =
+    /// discharging. Read from AppleSmartBattery; polled (level changes are
+    /// event-driven, but power varies continuously with load).
+    @Published var powerWatts: Double = 0
+    /// Low Power Mode ("battery saver") state.
+    @Published var isLowPowerMode = ProcessInfo.processInfo
+        .isLowPowerModeEnabled
 
     private var runLoopSource: CFRunLoopSource?
+    private var lowPowerObserver: NSObjectProtocol?
 
     private var randomTimer: Timer?
 
     init() {
+        lowPowerObserver = NotificationCenter.default.addObserver(
+            forName: .NSProcessInfoPowerStateDidChange,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.isLowPowerMode =
+                ProcessInfo.processInfo.isLowPowerModeEnabled
+        }
         if widgetDebugRandom {
             startRandom()
         } else {
@@ -22,6 +38,9 @@ class BatteryManager: ObservableObject {
     deinit {
         stopMonitoring()
         randomTimer?.invalidate()
+        if let lowPowerObserver {
+            NotificationCenter.default.removeObserver(lowPowerObserver)
+        }
     }
 
     private func startRandom() {
@@ -37,6 +56,10 @@ class BatteryManager: ObservableObject {
         batteryLevel = Int.random(in: 0...100)
         isCharging = Bool.random()
         isPluggedIn = isCharging || Bool.random()
+        // A signed, roughly log-distributed wattage for visual testing.
+        let magnitude = pow(10, Double.random(in: -0.3...1.8))  // ~0.5W–60W
+        powerWatts = isCharging ? magnitude : -magnitude
+        isLowPowerMode = Bool.random()
     }
 
     private func startMonitoring() {
@@ -50,11 +73,12 @@ class BatteryManager: ObservableObject {
             manager.updateBatteryStatus()
         }
 
-        guard
-            let source = IOPSNotificationCreateRunLoopSource(callback, context)?.takeRetainedValue()
-        else { return }
-        runLoopSource = source
-        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        if let source = IOPSNotificationCreateRunLoopSource(callback, context)?
+            .takeRetainedValue()
+        {
+            runLoopSource = source
+            CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        }
     }
 
     private func stopMonitoring() {
@@ -65,6 +89,9 @@ class BatteryManager: ObservableObject {
     }
 
     func updateBatteryStatus() {
+        // Fired by the IOPS notification on any power-source change (incl.
+        // plug/unplug) — refresh the rate too so the cap responds at once.
+        updatePower()
         guard let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
             let sources = IOPSCopyPowerSourcesList(snapshot)?.takeRetainedValue() as? [CFTypeRef]
         else { return }
@@ -90,5 +117,35 @@ class BatteryManager: ObservableObject {
                 }
             }
         }
+    }
+
+    private func updatePower() {
+        let watts = Self.readPowerWatts()
+        DispatchQueue.main.async { self.powerWatts = watts }
+    }
+
+    /// Reads instantaneous power from AppleSmartBattery: amperage (mA, signed)
+    /// × voltage (mV) → watts. Returns 0 if the service/keys are unavailable.
+    private static func readPowerWatts() -> Double {
+        let service = IOServiceGetMatchingService(
+            kIOMainPortDefault, IOServiceNameMatching("AppleSmartBattery"))
+        guard service != 0 else { return 0 }
+        defer { IOObjectRelease(service) }
+
+        func intProp(_ key: String) -> Int? {
+            IORegistryEntryCreateCFProperty(
+                service, key as CFString, kCFAllocatorDefault, 0)?
+                .takeRetainedValue() as? Int
+        }
+        guard let rawAmperage = intProp("Amperage"),
+            let voltage = intProp("Voltage")
+        else { return 0 }
+
+        // Amperage is signed but reported as an unsigned 64-bit value; fold
+        // the high half back to negative (discharging).
+        var amperage = rawAmperage
+        if amperage > Int(Int32.max) { amperage -= 1 << 32 }
+
+        return Double(amperage) * Double(voltage) / 1_000_000
     }
 }

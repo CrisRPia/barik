@@ -203,13 +203,20 @@ struct ResourceDashboardPopup: View {
 
     private var batterySection: some View {
         let level = battery.batteryLevel
+        let watts = battery.powerWatts
         return VStack(alignment: .leading, spacing: 8) {
             header("Battery", icon: "battery.100", trailing: "\(level)%")
             ProgressView(value: Double(level), total: 100)
                 .tint(.white)
-            Text(batteryState)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+            HStack {
+                Text(batteryState)
+                if abs(watts) >= 0.05 {
+                    Text("· \(Self.power(watts))")
+                }
+            }
+            .font(.system(size: 12))
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
         }
     }
 
@@ -217,6 +224,11 @@ struct ResourceDashboardPopup: View {
         if battery.isCharging { return "Charging" }
         if battery.isPluggedIn { return "Plugged in" }
         return "On battery"
+    }
+
+    private static func power(_ watts: Double) -> String {
+        let arrow = watts >= 0 ? "↑" : "↓"
+        return String(format: "%@ %.1f W", arrow, abs(watts))
     }
 
     // MARK: Helpers
