@@ -1,6 +1,6 @@
 import AppKit
 
-struct AeroWindow: WindowModel {
+struct AeroWindow: Decodable {
     let id: Int
     let title: String
     let appName: String?
@@ -29,8 +29,7 @@ struct AeroWindow: WindowModel {
     }
 }
 
-struct AeroSpace: SpaceModel {
-    typealias WindowType = AeroWindow
+struct AeroSpace: Decodable {
     let workspace: String
     var id: String { workspace }
     var isFocused: Bool = false

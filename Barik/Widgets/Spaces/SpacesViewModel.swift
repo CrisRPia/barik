@@ -10,7 +10,7 @@ class SpacesViewModel: ObservableObject {
     private let refreshSubject = PassthroughSubject<Void, Never>()
     private var cancellables = Set<AnyCancellable>()
 
-    private var provider: AnySpacesProvider?
+    private var provider: AerospaceSpacesProvider?
     /// space id -> most-recently-focused window id, accumulated as the user
     /// moves around. Lets inactive spaces show the window they'd focus into.
     private var lastFocusedByID: [String: Int] = [:]
@@ -29,13 +29,9 @@ class SpacesViewModel: ObservableObject {
         let runningApps = NSWorkspace.shared.runningApplications.compactMap {
             $0.localizedName?.lowercased()
         }
-        if runningApps.contains("yabai") {
-            provider = AnySpacesProvider(YabaiSpacesProvider())
-        } else if runningApps.contains("aerospace") {
-            provider = AnySpacesProvider(AerospaceSpacesProvider())
-        } else {
-            provider = nil
-        }
+        provider =
+            runningApps.contains("aerospace")
+            ? AerospaceSpacesProvider() : nil
 
         setupNamedPipe()
         setupPipeline()
@@ -92,7 +88,8 @@ class SpacesViewModel: ObservableObject {
                 let start = Date()
 
                 // This is the blocking work
-                let spaces = provider.getSpacesWithWindows() ?? []
+                let spaces = (provider.getSpacesWithWindows() ?? [])
+                    .map { AnySpace($0) }
                 let sorted = spaces.sorted { $0.id < $1.id }
 
                 // Remember the focused window as its space's MRU window.

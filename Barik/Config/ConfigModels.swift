@@ -3,14 +3,12 @@ import SwiftUI
 
 struct RootToml: Decodable {
     var theme: String?
-    var yabai: YabaiConfig?
     var aerospace: AerospaceConfig?
     var experimental: ExperimentalConfig?
     var widgets: WidgetsSection
 
     init() {
         self.theme = nil
-        self.yabai = nil
         self.aerospace = nil
         self.widgets = WidgetsSection(displayed: [], others: [:])
     }
@@ -25,10 +23,6 @@ struct Config {
 
     var theme: String {
         rootToml.theme ?? "light"
-    }
-    
-    var yabai: YabaiConfig {
-        rootToml.yabai ?? YabaiConfig()
     }
     
     var aerospace: AerospaceConfig {
@@ -235,20 +229,6 @@ extension TOMLValue {
     var dictionaryValue: ConfigData? {
         if case let .dictionary(dict) = self { return dict }
         return nil
-    }
-}
-
-struct YabaiConfig: Decodable {
-    let path: String
-
-    init() {
-        if FileManager.default.fileExists(atPath: "/opt/homebrew/bin/yabai") {
-            self.path = "/opt/homebrew/bin/yabai"
-        } else if FileManager.default.fileExists(atPath: "/usr/local/bin/yabai") {
-            self.path = "/usr/local/bin/yabai"
-        } else {
-            self.path = "/opt/homebrew/bin/yabai"
-        }
     }
 }
 

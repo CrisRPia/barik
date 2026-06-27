@@ -1,7 +1,6 @@
 import Foundation
 
-class AerospaceSpacesProvider: SpacesProvider, SwitchableSpacesProvider {
-    typealias SpaceType = AeroSpace
+class AerospaceSpacesProvider {
     let executablePath = ConfigManager.shared.config.aerospace.path
 
     func getSpacesWithWindows() -> [AeroSpace]? {
@@ -69,7 +68,7 @@ class AerospaceSpacesProvider: SpacesProvider, SwitchableSpacesProvider {
                 }
             }
         }
-        var resultSpaces = Array(spaceDict.values)
+        let resultSpaces = Array(spaceDict.values)
         return resultSpaces.filter { !$0.windows.isEmpty || $0.isFocused }
     }
 
