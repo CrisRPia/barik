@@ -3,28 +3,94 @@ import SwiftUI
 struct SpacesWidget: View {
     @StateObject var viewModel = SpacesViewModel()
     @Namespace private var windowNamespace
+    @Namespace private var highlightNamespace
 
     @ObservedObject var configManager = ConfigManager.shared
     var foregroundHeight: CGFloat {
         configManager.config.experimental.foreground.resolveHeight()
     }
 
+    /// Matched-geometry id for the focused-space frame, shared by the glass
+    /// capsule and the frost cutout so both track the focused space as one.
+    private let focusID = "space-focus"
+
+    private var hasFocus: Bool {
+        viewModel.spaces.contains {
+            $0.windows.contains { $0.isFocused } || $0.isFocused
+        }
+    }
+
     var body: some View {
         HStack(spacing: foregroundHeight < 30 ? 0 : 8) {
             ForEach(viewModel.spaces) { space in
-                SpaceView(space: space, windowNamespace: windowNamespace)
+                SpaceView(
+                    space: space,
+                    windowNamespace: windowNamespace,
+                    highlightNamespace: highlightNamespace,
+                    focusID: focusID
+                )
             }
         }
-        // .experimentalConfiguration(horizontalPadding: 5, cornerRadius: 100)
-        .animation(.smooth(duration: 0.3), value: viewModel.spaces)
         .environmentObject(viewModel)
-        .background(.ultraThinMaterial)  // The "Frosted Glass"
-        .clipShape(RoundedRectangle(cornerRadius: 100, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 100, style: .continuous)
-                .stroke(.white.opacity(0.15), lineWidth: 1)  // The "Glass Edge"
-        )
-        .shadow(color: .black.opacity(0.15), radius: 10, x: 0, y: 5)
+        // Backdrop, back-to-front: a frosted rail with a hole punched where the
+        // focused space is, then a raised Liquid Glass pill sitting ON TOP at
+        // that space. The hole keeps the glass CLEAR-backed (it samples the
+        // wallpaper, not the frost), and the pill is taller than the rail so its
+        // top/bottom poke past the frost too. Being a top glass layer it carries
+        // its own adaptive shadow → it reads as raised. Only this one small
+        // glass pill is animated, so it stays fluid.
+        .background {
+            ZStack {
+                // The frosted rail, hole punched under the pill.
+                Capsule()
+                    .fill(.regularMaterial)
+                    .mask { frostMask }
+                // The raised, clear-backed glass pill on the focused space.
+                if hasFocus {
+                    Capsule()
+                        .fill(.clear)
+                        .glassEffect(.clear.interactive(), in: Capsule())
+                        // Negative padding BEFORE matchedGeometry grows the pill
+                        // a fixed amount past the source (the effect pins the
+                        // padded frame). Taller than the rail (vertical poke) and
+                        // wider (proud of the space). Consistent, unlike a % scale.
+                        .padding(.horizontal, -6)
+                        .padding(.vertical, -3)
+                        .matchedGeometryEffect(
+                            id: focusID, in: highlightNamespace, isSource: false)
+                }
+            }
+        }
+        // The original content animation; it also drives the glass pill + hole
+        // to the new focused space. Glass is decoupled in the background, so it
+        // can't shift the numbers/icons like inline glass did.
+        .animation(.smooth(duration: 0.3), value: viewModel.spaces)
+        // Breathing room for the focused pill, which pokes ~6pt past the
+        // content on each side; keeps it off the neighbouring widgets.
+        .padding(.horizontal, 8)
+    }
+
+    /// Frosted rail minus the focused-space capsule: destinationOut punches the
+    /// hole so the wallpaper (not the frost) is behind the glass pill.
+    @ViewBuilder
+    private var frostMask: some View {
+        if hasFocus {
+            Capsule()
+                .fill(.white)
+                .overlay {
+                    Capsule()
+                        // Same enlargement as the glass pill so the hole tracks
+                        // it exactly — no frost peeking behind the pill's rim.
+                        .padding(.horizontal, -6)
+                        .padding(.vertical, -3)
+                        .matchedGeometryEffect(
+                            id: focusID, in: highlightNamespace, isSource: false)
+                        .blendMode(.destinationOut)
+                }
+                .compositingGroup()
+        } else {
+            Capsule()
+        }
     }
 }
 
@@ -47,19 +113,15 @@ private struct SpaceView: View {
 
     @State var isHovered = false
     var windowNamespace: Namespace.ID
+    var highlightNamespace: Namespace.ID
+    let focusID: String
 
     var body: some View {
         let isFocused =
             space.windows.contains { $0.isFocused } || space.isFocused
         let hasWindows = !space.windows.isEmpty
         HStack(spacing: 0) {
-            // Vertical highlight marks the focused (or hovered) space —
-            // replaces the old rounded pill so spaces pack tighter.
-            Capsule()
-                .fill(.white)
-                .opacity(isFocused ? 0.8 : (isHovered ? 0.3 : 0))
-                .frame(width: 2.5, height: 16)
-            Spacer().frame(width: 6)
+            Spacer().frame(width: 8)
             if showKey {
                 Text(space.id)
                     .font(.headline)
@@ -83,9 +145,21 @@ private struct SpaceView: View {
                     .zIndex(Double(space.windows.count - offset))
                 }
             }
-            Spacer().frame(width: 6)
+            Spacer().frame(width: 8)
         }
         .frame(height: 30)
+        // Publishes this space's frame (when focused) so the background glass
+        // capsule and frost cutout match it. Clear → no visual, no layout cost.
+        .background {
+            if isFocused {
+                // Source frame for the glass cut = this space's content frame.
+                // The followers add a fixed enlargement (taller + wider) on top,
+                // so the pill is a consistent amount bigger than every space.
+                Color.clear
+                    .matchedGeometryEffect(
+                        id: focusID, in: highlightNamespace, isSource: true)
+            }
+        }
         .contentShape(Rectangle())
         .transition(.blurReplace)
         .onTapGesture {
