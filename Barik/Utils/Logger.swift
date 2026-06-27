@@ -6,4 +6,5 @@ extension Logger {
     static let pipe = Logger(subsystem: subsystem, category: "Pipe")
     static let spaces = Logger(subsystem: subsystem, category: "Spaces")
     static let ui = Logger(subsystem: subsystem, category: "UI")
+    static let aerospace = Logger(subsystem: subsystem, category: "Aerospace")
 }

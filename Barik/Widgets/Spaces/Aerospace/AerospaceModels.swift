@@ -37,11 +37,14 @@ struct AeroSpace: Decodable {
 
     enum CodingKeys: String, CodingKey {
         case workspace
+        case isFocused = "workspace-is-focused"
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         workspace = try container.decode(String.self, forKey: .workspace)
+        isFocused =
+            try container.decodeIfPresent(Bool.self, forKey: .isFocused) ?? false
     }
 
     init(workspace: String, isFocused: Bool = false, windows: [AeroWindow] = [])
